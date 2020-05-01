@@ -1,14 +1,17 @@
 CPPFLAGS= -std=c++17 -Wall -Wextra -pedantic -g
+LIBS= -lpcap
+SRC= src/main.cpp src/resources.cpp src/resources.hpp src/sniffer.cpp src/sniffer.hpp
 
-all: run
+all: sniffer
 
 run: sniffer
-	build/sniffer
+	./build/sniffer
 
-sniffer: src/main.cc
-	g++ $(CPPFLAGS) src/main.cc -o build/sniffer
+sniffer: $(SRC)
+	g++ $(CPPFLAGS) $(LIBS) src/main.cpp src/resources.cpp src/sniffer.cpp -o sniffer
 
 .PHONY: clean
 
 clean:
 	rm -rf build/*
+	rm sniffer
