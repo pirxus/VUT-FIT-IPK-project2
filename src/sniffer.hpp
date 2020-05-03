@@ -20,6 +20,8 @@
 #include <time.h>
 #include <netdb.h>
 
+#include "resources.hpp"
+
 #define PRTCL_TCP 6
 #define PRTCL_UDP 17 
 #define PRTCL_ICMP 1 

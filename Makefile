@@ -14,4 +14,4 @@ sniffer: $(SRC)
 
 clean:
 	rm -rf build/*
-	rm sniffer
+	rm -f sniffer
