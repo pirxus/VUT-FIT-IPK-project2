@@ -8,6 +8,7 @@
 #define  __SNIFFER_HPP__
 
 #include <iostream>
+#include <map>
 #include <pcap.h>
 #include <netinet/in.h>
 #include <netinet/ether.h>
@@ -42,12 +43,20 @@ typedef struct packet_info {
     uint16_t src_port;
     uint16_t dst_port;
 
-    union { /* The ip addresses.. */
-        struct in_addr ipv4_src, ipv4_dst;
-        struct in6_addr ipv6_src, ipv6_dst;
-    } ip;
+    /* Source ip address.. */
+    union {
+        struct in_addr ipv4_src;
+        struct in6_addr ipv6_src;
+    } ip_src;
+
+    /* Destination ip address.. */
+    union {
+        struct in_addr ipv4_dst;
+        struct in6_addr ipv6_dst;
+    } ip_dst;
 
     const u_char *packet; /* The whole packet */
+    uint8_t eth_len, ip_len, tcp_udp_len; /* Packet header lenghts */
 } pckt_data;
 
 /**
@@ -105,7 +114,7 @@ void print_current_packet_data(const pckt_data packet_data);
  * program tried to fetch the hostname, the request would be immediately caught by the
  * sniffer and queried again.
  */
-const char *get_hostname_ipv4(struct in_addr address);
-const char *get_hostname_ipv6(struct in6_addr address);
+std::string get_hostname_ipv4(struct in_addr address);
+std::string get_hostname_ipv6(struct in6_addr address);
 
 #endif

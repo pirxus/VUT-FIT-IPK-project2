@@ -1,17 +1,14 @@
-CPPFLAGS= -std=c++17 -Wall -Wextra -pedantic -g -DDO_NOT_TRANSLATE_IP
+CPPFLAGS= -std=c++17 -Wall -Wextra -pedantic -g # -DDO_NOT_TRANSLATE_IP
 LIBS= -lpcap
 SRC= src/main.cpp src/resources.cpp src/resources.hpp src/sniffer.cpp src/sniffer.hpp
 
 all: sniffer
 
-run: sniffer
-	./build/sniffer
-
 sniffer: $(SRC)
-	g++ $(CPPFLAGS) $(LIBS) src/main.cpp src/resources.cpp src/sniffer.cpp -o sniffer
+	g++ $(CPPFLAGS) src/main.cpp src/resources.cpp src/sniffer.cpp -o ipk-sniffer $(LIBS)
 
 .PHONY: clean
 
 clean:
 	rm -rf build/*
-	rm -f sniffer
+	rm -f ipk-sniffer
