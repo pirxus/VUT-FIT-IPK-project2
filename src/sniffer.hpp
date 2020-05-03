@@ -4,6 +4,9 @@
  * @brief  sniffer module header file
  */
 
+#ifndef __SNIFFER_HPP__
+#define  __SNIFFER_HPP__
+
 #include <iostream>
 #include <pcap.h>
 #include <netinet/in.h>
@@ -16,8 +19,6 @@
 #include <arpa/inet.h>
 #include <time.h>
 #include <netdb.h>
-
-#include "resources.hpp"
 
 #define PRTCL_TCP 6
 #define PRTCL_UDP 17 
@@ -104,3 +105,5 @@ void print_current_packet_data(const pckt_data packet_data);
  */
 const char *get_hostname_ipv4(struct in_addr address);
 const char *get_hostname_ipv6(struct in6_addr address);
+
+#endif
