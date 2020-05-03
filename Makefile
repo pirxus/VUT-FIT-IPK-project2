@@ -1,4 +1,4 @@
-CPPFLAGS= -std=c++17 -Wall -Wextra -pedantic -g
+CPPFLAGS= -std=c++17 -Wall -Wextra -pedantic -g -DDO_NOT_TRANSLATE_IP
 LIBS= -lpcap
 SRC= src/main.cpp src/resources.cpp src/resources.hpp src/sniffer.cpp src/sniffer.hpp
 

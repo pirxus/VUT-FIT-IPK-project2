@@ -36,41 +36,47 @@ int sniff_init(char *interface, unsigned *port, unsigned *n_packets, bool tcp, b
         mask = 0;
     }
 
-    //TODO tcp/udp filter
+    /* Filter the packets for ipv4/v6 and tcp/ucp only.. */
+    struct bpf_program fp;
+    std::string filter;
+    std::string tcp_filter = "proto \\tcp";
+    std::string udp_filter = "proto \\udp";
     if (tcp != udp) {
-        //setup filter
+        filter = (tcp ? tcp_filter : udp_filter);
+    } else {
+        filter = "(" + tcp_filter + ") or (" + udp_filter + ")";
     }
 
     /* Filter the traffic by port if specified... */
     if (port != nullptr) {
-        struct bpf_program fp;
-        char filter_exp[] = "port 23";
-        // TODO: the filter... 
-
-        /* Setup the port filter */
-        if (pcap_compile(handle, &fp, filter_exp, 0, net) == -1) {
-            std::cerr << "Error: Couldn't parse filter " << filter_exp << ": "
-                << pcap_geterr(handle) << std::endl;
-            return(ERROR_SNIFFER);
-        }
-        if (pcap_setfilter(handle, &fp) == -1) {
-           std::cerr << "Error: Couldn't set filter " << filter_exp << ": "
-               << pcap_geterr(handle) << std::endl;
-            return(ERROR_SNIFFER);
-        }
+        filter = "(" + filter + ") and (port " + std::to_string(*port) + ")";
     }
 
-    /* Start the actual sniffing */
+    /* Compile and set the final filter */
+    if (pcap_compile(handle, &fp, filter.c_str(), 0, net) == -1) {
+        std::cerr << "Error: Invalid filter" << filter << ": "
+            << pcap_geterr(handle) << std::endl;
+        return(ERROR_SNIFFER);
+    }
+    if (pcap_setfilter(handle, &fp) == -1) {
+       std::cerr << "Error: Couldn't set filter " << filter << ": "
+           << pcap_geterr(handle) << std::endl;
+        return(ERROR_SNIFFER);
+    }
+
+    /* Start the actual sniffing process */
     if (sniff(handle, n_packets) != SUCCESS) {
         return ERROR_SNIFFER;
     }
 
+    pcap_freecode(&fp);
+    pcap_close(handle);
     return SUCCESS;
 }
 
 int sniff(pcap_t *handle, unsigned *n_packets) {
     int retval;
-    u_char *user = NULL; //TODO: possibly useful for storing flags??
+    u_char *user = NULL;
     unsigned packet_count = 1;
 
     /* Set the number of packets we want to sniff. The implicit value is 1, 0 means
@@ -89,14 +95,9 @@ int sniff(pcap_t *handle, unsigned *n_packets) {
         } else if (retval == PCAP_ERROR_BREAK) {
             std::cerr << "PCAP_ERROR_BREAK\n";
             break;
-            // TODO: what to do here...
         }
-
-
-        /* Print out the content of packet_data */
     }
 
-    pcap_close(handle);
     return SUCCESS;
 }
 
@@ -106,28 +107,28 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
     const struct ether_header *eth_header;
     pckt_data packet_data;
 
+    /* Store the pcap packet header and the packet itself to our structure */
     packet_data.header = header;
     packet_data.packet = packet;
 
     eth_header = (struct ether_header *)(packet); /* get the ethernet header */
     u_short type = ntohs(eth_header->ether_type); /* get the ethernet type */
 
+    /* Determine the type of the IP packet and process it */
     if (type == ETHERTYPE_IP) {
-        retval = process_ipv4(packet + sizeof(ether_header), &packet_data);
+        retval = process_ipv4(packet + ETH_HDR_SIZE, &packet_data);
 
     } else if (type == ETHERTYPE_IPV6) {
-        retval = process_ipv6(packet + sizeof(ether_header), &packet_data);
+        retval = process_ipv6(packet + ETH_HDR_SIZE, &packet_data);
 
     } else {
         return;
     }
 
-    if (retval != 0) {
-        return; //TODO
-    }
+    if (retval != 0)
+        return;
 
     print_current_packet_data(packet_data);
-    return;
 }
 
 int process_ipv4(const u_char *packet, pckt_data *packet_data) {
@@ -144,14 +145,13 @@ int process_ipv4(const u_char *packet, pckt_data *packet_data) {
 
     /* Determine whether the underlying packet is tcp or udp and trim off the ip
      * header and options.. */
-    int offset = ip_hdr->ip_hl - 5;
+
+    int offset = ip_hdr->ip_hl * 4; /* We need to skip the whole header */
     if (ip_hdr->ip_p == PRTCL_TCP) {
-        retval = process_tcp((const u_char *)ip_hdr + sizeof(struct ip) + offset,
-                packet_data);
+        retval = process_tcp(packet + offset, packet_data);
 
     } else if (ip_hdr->ip_p == PRTCL_UDP){
-        retval = process_udp((const u_char *)ip_hdr + sizeof(struct ip) + offset,
-                packet_data);
+        retval = process_udp(packet + offset, packet_data);
         
     } else {
         retval = -1; /* Unsupported protocol */
@@ -196,8 +196,8 @@ int process_udp(const u_char *packet, pckt_data *packet_data) {
 
     /* Get packet info */
     packet_data->tcp_udp = PRTCL_UDP;
-    packet_data->src_port = udp_hdr->source;
-    packet_data->dst_port = udp_hdr->dest;
+    packet_data->src_port = ntohs(udp_hdr->source);
+    packet_data->dst_port = ntohs(udp_hdr->dest);
 
     return retval;
 }
@@ -211,39 +211,61 @@ int process_tcp(const u_char *packet, pckt_data *packet_data) {
 
     /* Get packet info */
     packet_data->tcp_udp = PRTCL_TCP;
-    packet_data->src_port = tcp_hdr->source;
-    packet_data->dst_port = tcp_hdr->dest;
+    packet_data->src_port = ntohs(tcp_hdr->source);
+    packet_data->dst_port = ntohs(tcp_hdr->dest);
 
     return retval;
 }
 
 void print_current_packet_data(const pckt_data packet_data) {
-    //std::cout << packet_data.header->ts.tv_sec;
+    /* Prepare and print the timestamp */
+    struct tm *t =  localtime(&packet_data.header->ts.tv_sec);
+    printf("%02d:%02d:%02d.%06ld ", t->tm_hour, t->tm_min, t->tm_sec,
+            packet_data.header->ts.tv_usec);
 
     /* Print the adresses and port numbers */
     if (packet_data.ipv == IP_VER4) {
-        printf("%s : %d > ", inet_ntoa(packet_data.ip.ipv4_src), packet_data.src_port);
-        printf("%s : %d\n", inet_ntoa(packet_data.ip.ipv4_dst), packet_data.dst_port);
+        const char *name_src = get_hostname_ipv4(packet_data.ip.ipv4_src);
+        const char *name_dst = get_hostname_ipv4(packet_data.ip.ipv4_dst);
+        printf("%s : %u > ",
+                name_src == nullptr ? inet_ntoa(packet_data.ip.ipv4_src) : name_src,
+                packet_data.src_port);
+        printf("%s : %u\n",
+                name_dst == nullptr ? inet_ntoa(packet_data.ip.ipv4_dst) : name_dst,
+                packet_data.dst_port);
 
     } else if (packet_data.ipv == IP_VER6) {
-        /* Source address and port */
-        for (int i = 0; i < 7; i++)
-            printf("%x:", packet_data.ip.ipv6_src.s6_addr16[i]);
-        printf("%x : %d > ", packet_data.ip.ipv6_src.s6_addr16[7], packet_data.src_port);
+        const char *name_src = get_hostname_ipv6(packet_data.ip.ipv6_src);
+        const char *name_dst = get_hostname_ipv6(packet_data.ip.ipv6_dst);
+
+        /* Source address and port - care for endians*/
+        if (name_src != nullptr) {
+            printf("%s : %u > ", name_src, packet_data.src_port);
+
+        } else {
+            /* Print the bare ip address */
+            for (int i = 0; i < 7; i++)
+                printf("%x:", ntohs(packet_data.ip.ipv6_src.s6_addr16[i]));
+            printf("%x : %u > ", ntohs(packet_data.ip.ipv6_src.s6_addr16[7])
+                    , packet_data.src_port);
+        }
 
         /* Destination address and port */
-        for (int i = 0; i < 7; i++)
-            printf("%x:", packet_data.ip.ipv6_dst.s6_addr16[i]);
-        printf("%x : %d\n", packet_data.ip.ipv6_dst.s6_addr16[7], packet_data.dst_port);
-
-    } else {
-        return; /* This should not happen... */
+        if (name_dst != nullptr) {
+            printf("%s : %u\n", name_dst, packet_data.dst_port);
+        } else {
+            for (int i = 0; i < 7; i++)
+                printf("%x:", ntohs(packet_data.ip.ipv6_dst.s6_addr16[i]));
+            printf("%x : %u\n", ntohs(packet_data.ip.ipv6_dst.s6_addr16[7])
+                    , packet_data.dst_port);
+        }
     }
 
     /* Now print the actual packet data... */
     std::string output; /* Stores the ascii representation of the bytes... */
     output.clear();
 
+    /* This loop is just a mesh of modulo rules to format the output elegantly.. */
     for (unsigned i = 0; i < packet_data.header->caplen; i++) {
         if (i % 8 == 0 && i % 16 != 0) {
             /* Separate the output by 8 octets */
@@ -267,13 +289,13 @@ void print_current_packet_data(const pckt_data packet_data) {
         else
             output += '.';
         
-        printf("%02x ", c); /* Print the hexa value */
+        printf("%02x ", c); /* Print the hexa value of the octet */
     }
 
     /* Print the last row */
     int len = output.length();
     if (len != 0) {
-        if (len > 8) printf("   ");
+        if (len > 8 && len != 17) printf("   ");
         for (int i = len; i < 16; i++) {
             if (i == 8) printf(" ");
             printf("   ");
@@ -281,5 +303,26 @@ void print_current_packet_data(const pckt_data packet_data) {
         printf(" %s\n", output.c_str());
     }
     printf("\n");
+}
 
+const char *get_hostname_ipv4(struct in_addr address) {
+#ifdef DO_NOT_TRANSLATE_IP
+    if(address.s_addr) {} /* Eliminate wunused warning... */
+    return nullptr;
+#else
+    struct hostent *host = gethostbyaddr((void *)&address, sizeof(address), AF_INET);
+    if (host == nullptr) return nullptr;
+    return host->h_name;
+#endif
+}
+
+const char *get_hostname_ipv6(struct in6_addr address) {
+#ifdef DO_NOT_TRANSLATE_IP
+    if(address.s6_addr16) {}
+    return nullptr;
+#else
+    struct hostent *host = gethostbyaddr((void *)&address, sizeof(address), AF_INET6);
+    if (host == nullptr) return nullptr;
+    return host->h_name;
+#endif
 }

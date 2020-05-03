@@ -14,6 +14,8 @@
 #include <netinet/udp.h>
 #include <net/ethernet.h>
 #include <arpa/inet.h>
+#include <time.h>
+#include <netdb.h>
 
 #include "resources.hpp"
 
@@ -23,6 +25,8 @@
 
 #define IP_VER4 4
 #define IP_VER6 6
+
+#define ETH_HDR_SIZE 14
 
 /**
  * @brief This structure holds the information about the currently processed packet and
@@ -90,3 +94,13 @@ int process_tcp(const u_char *packet, pckt_data *packet_data);
  * @brief Prints the formated form of packet_data
  */
 void print_current_packet_data(const pckt_data packet_data);
+
+/**
+ * These two functions are used to translate ip addresses to hostnames. By default,
+ * the DO_NOT_TRANSLATE_IP macro is set in the makefile and therefore these two
+ * functions will always return nullptr. The reason for this was that as soon as the
+ * program tried to fetch the hostname, the request would be immediately caught by the
+ * sniffer and queried again.
+ */
+const char *get_hostname_ipv4(struct in_addr address);
+const char *get_hostname_ipv6(struct in6_addr address);
